@@ -1,86 +1,565 @@
-// 🚀 ENTERPRISE DISTRIBUTE SYSTEM: PUSH MULTI-STEP METADATA INTO FIRESTORE
-app.post('/api/releases', async (req, res) => {
-  try {
-    const {
-      // 1. Basic Info
-      title, version, type, primaryArtist, featuredArtists, producerName,
-      songwriters, composers, genre, subgenre, language, isExplicit,
-      releaseDate, originalReleaseDate, recordLabel, copyrightOwner, publishingOwner,
-      
-      // 4. Track Metadata & Track Specs
-      bpm, musicalKey, mood, tags, ISRC,
-      
-      // 6. Royalty Splits
-      splits, autoSplit, paymentMethod, mpesaNumber, paypalEmail,
-      
-      // 7 & 8. Platforms & Socials
-      platforms, socialMonetization,
-      
-      // 10 & 11. Monetization & Scheduling
-      monetizationSettings, scheduling,
-      
-      // 12. Marketing
-      marketing
-    } = req.body;
+import React, { useState, useEffect } from 'react';
+import {
+  Music, BarChart2, DollarSign, Disc,
+  Upload, LogOut, ChevronRight, CheckCircle,
+  Clock, AlertCircle, Menu, X, Info, HelpCircle
+} from 'lucide-react';
 
-    if (!title || !type || !primaryArtist) {
-      return res.status(400).json({ error: 'Missing core tracking metrics: Title, Type, and Primary Artist are required.' });
+export default function AudioryDashboard() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard');
+
+  // Sub-navigation step tracking logic for the new form system layout
+  const [formStep, setFormStep] = useState('basic'); 
+
+  // Dynamic state management variables
+  const [recentReleases, setRecentReleases] = useState([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [formMessage, setFormMessage] = useState('');
+
+  // 13-Point Enterprise Master Object state map schema declaration
+  const [formData, setFormData] = useState({
+    title: '', version: '', type: 'Single', primaryArtist: '', featuredArtists: '',
+    producerName: '', songwriters: '', composers: '', genre: 'Afrobeats', subgenre: '',
+    language: 'Swahili', isExplicit: 'No', releaseDate: '', originalReleaseDate: '',
+    recordLabel: '', copyrightOwner: '', publishingOwner: '',
+    bpm: '', musicalKey: '', mood: '', tags: '', ISRC: '',
+    autoSplit: true, paymentMethod: 'M-Pesa', mpesaNumber: '', paypalEmail: '',
+    platforms: ['Spotify', 'Apple Music', 'Boomplay', 'Audiomack', 'TikTok'],
+    socialMonetization: ['TikTok Monetization', 'YouTube Content ID']
+  });
+
+  // Dynamic state array tracker handling variable split percentages
+  const [splitsList, setSplitsList] = useState([
+    { id: 1, name: 'Producer (You)', role: 'Main Artist / Producer', email: '', percentage: 100 }
+  ]);
+
+  const fetchReleases = () => {
+    setLoadingCatalog(true);
+    fetch('https://distro.audiory.site/api/releases')
+      .then((res) => res.json())
+      .then((data) => {
+        setRecentReleases(data);
+        setLoadingCatalog(false);
+      })
+      .catch((err) => {
+        console.error('Error fetching data tracking metrics from tunnel:', err);
+        setLoadingCatalog(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchReleases();
+  }, []);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // Toggle dynamic lists matching checkbox arrays mapping platform selections
+  const handleCheckboxToggle = (category, value) => {
+    setFormData((prev) => {
+      const currentList = [...prev[category]];
+      if (currentList.includes(value)) {
+        return { ...prev, [category]: currentList.filter(item => item !== value) };
+      } else {
+        return { ...prev, [category]: [...currentList, value] };
+      }
+    });
+  };
+
+  // Dynamic array operations modifiers handling row entries updates for distribution pools
+  const updateSplitRow = (id, field, value) => {
+    setSplitsList(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const addSplitRow = () => {
+    setSplitsList(prev => [...prev, { id: Date.now(), name: '', role: 'Songwriter', email: '', percentage: 0 }]);
+  };
+
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.title.trim() || !formData.primaryArtist.trim()) {
+      setFormMessage('❌ Core metrics error: Title and Primary Artist tracking variables cannot be left empty.');
+      setFormStep('basic');
+      return;
     }
 
-    const compiledReleasePayload = {
-      // Core fields for tracking dashboards
-      title,
-      type,
-      upc: req.body.upc || `AUC-${Math.floor(10000000 + Math.random() * 90000000)}`, // Auto-generate clean UPC code if empty
-      releaseDate: releaseDate || new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
-      streams: req.body.streams ? Number(req.body.streams) : 0,
-      status: req.body.status || 'In Review',
-      createdAt: new Date().toISOString(),
+    // Mathematical safety logic validating operational royalty splits totals
+    const totalPercentage = splitsList.reduce((acc, curr) => acc + Number(curr.percentage || 0), 0);
+    if (totalPercentage !== 100) {
+      setFormMessage(`❌ Royalty distribution calculation warning: Aggregate percentages must equal 100% exactly (Current aggregate: ${totalPercentage}%).`);
+      setFormStep('splits');
+      return;
+    }
 
-      // Complete Metadata Specifications Mapping
-      metadata: {
-        version: version || 'Original Mix',
-        primaryArtist,
-        featuredArtists: featuredArtists || '',
-        producerName: producerName || '',
-        songwriters: songwriters || '',
-        composers: composers || '',
-        genre: genre || 'Urban / Local',
-        subgenre: subgenre || '',
-        language: language || 'Swahili',
-        isExplicit: isExplicit === 'Yes' || isExplicit === true,
-        originalReleaseDate: originalReleaseDate || releaseDate,
-        recordLabel: recordLabel || 'Independent / Audiory',
-        copyrightOwner: copyrightOwner || primaryArtist,
-        publishingOwner: publishingOwner || primaryArtist
-      },
-      technicalSpecs: {
-        bpm: bpm || '',
-        musicalKey: musicalKey || '',
-        mood: mood || '',
-        tags: tags || '',
-        isrc: ISRC || `KE-AUD-${Math.floor(100000 + Math.random() * 900000)}` // Kenyan tracking ISRC code fallback mock
-      },
-      royaltyArchitecture: {
-        splits: splits || [{ name: primaryArtist, role: 'Main Artist', percentage: 100 }],
-        autoSplit: autoSplit || false,
-        paymentMethod: paymentMethod || 'M-Pesa',
-        mpesaNumber: mpesaNumber || '',
-        paypalEmail: paypalEmail || ''
-      },
-      distributionTargets: {
-        platforms: platforms || ['Spotify', 'Apple Music', 'Boomplay', 'Audiomack'],
-        socialMonetization: socialMonetization || ['TikTok', 'YouTube Content ID']
-      },
-      monetizationSettings: monetizationSettings || { contentId: true, publishing: true },
-      scheduling: scheduling || { mode: 'Instant Release', timeZone: 'EAT' },
-      marketing: marketing || { artistBio: '', socialLinks: {} }
-    };
+    setSubmitting(true);
+    setFormMessage('');
 
-    const docRef = await db.collection('releases').add(compiledReleasePayload);
-    res.status(201).json({ id: docRef.id, ...compiledReleasePayload });
-  } catch (error) {
-    console.error('❌ Error mapping enterprise submission metadata payload to Firestore:', error);
-    res.status(500).json({ error: 'Failed to process track distribution pipeline.' });
-  }
-});
+    const integratedPayload = { ...formData, splits: splitsList };
+
+    fetch('https://distro.audiory.site/api/releases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(integratedPayload)
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Database response matrix failed.');
+        return res.json();
+      })
+      .then(() => {
+        setSubmitting(false);
+        setFormMessage('🎉 Production validation success! Release pushed down database pipelines smoothly.');
+        setFormData({
+          title: '', version: '', type: 'Single', primaryArtist: '', featuredArtists: '',
+          producerName: '', songwriters: '', composers: '', genre: 'Afrobeats', subgenre: '',
+          language: 'Swahili', isExplicit: 'No', releaseDate: '', originalReleaseDate: '',
+          recordLabel: '', copyrightOwner: '', publishingOwner: '',
+          bpm: '', musicalKey: '', mood: '', tags: '', ISRC: '',
+          autoSplit: true, paymentMethod: 'M-Pesa', mpesaNumber: '', paypalEmail: '',
+          platforms: ['Spotify', 'Apple Music', 'Boomplay', 'Audiomack', 'TikTok'],
+          socialMonetization: ['TikTok Monetization', 'YouTube Content ID']
+        });
+        setSplitsList([{ id: 1, name: 'Producer (You)', role: 'Main Artist / Producer', email: '', percentage: 100 }]);
+        fetchReleases();
+        setActiveTab('dashboard');
+      })
+      .catch((err) => {
+        console.error(err);
+        setSubmitting(false);
+        setFormMessage('❌ Network timeout: Failed to register delivery targets inside distribution node paths.');
+      });
+  };
+
+  const stats = [
+    { name: 'Total Balance', value: '$1,240.50', icon: DollarSign, change: '+12% this month', color: 'text-emerald-400' },
+    { name: 'Total Streams', value: '348.2K', icon: BarChart2, change: '+24% this month', color: 'text-blue-400' },
+    { name: 'Active Releases', value: recentReleases.length.toString(), icon: Disc, change: 'Updated live', color: 'text-purple-400' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#0a0f1d] text-slate-100 font-sans flex flex-col md:flex-row">
+
+      {/* SIDEBAR NAVIGATION GRID BOX MODULE */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#0e1424] border-r border-slate-800 transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:inset-auto`}>
+        <div className="h-20 flex items-center justify-between px-6 border-b border-slate-800">
+          <div className="flex items-center space-x-3">
+            <div className="h-9 w-9 bg-gradient-to-tr from-blue-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20">A</div>
+            <span className="text-xl font-bold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
+              Audiory <span className="text-blue-400 font-medium text-sm px-2 py-0.5 bg-blue-500/10 rounded-full border border-blue-500/20 ml-1">Distro</span>
+            </span>
+          </div>
+          <button className="lg:hidden text-slate-400 hover:text-white" onClick={() => setSidebarOpen(false)}><X size={20} /></button>
+        </div>
+
+        <nav className="mt-6 px-4 space-y-1">
+          <button onClick={() => { setActiveTab('dashboard'); setSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-colors ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10' : 'text-slate-400 hover:bg-[#161f38] hover:text-white'}`}>
+            <Music size={18} /><span>Dashboard</span>
+          </button>
+          <button onClick={() => { setActiveTab('releases'); setSidebarOpen(false); }} className={`w-full flex items-center space-x-3 px-4 py-3 text-sm font-medium rounded-xl transition-colors ${activeTab === 'releases' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/10' : 'text-slate-400 hover:bg-[#161f38] hover:text-white'}`}>
+            <Disc size={18} /><span>My Releases</span>
+          </button>
+        </nav>
+
+        <div className="absolute bottom-0 w-full p-4 border-t border-slate-800 bg-[#0c1120]">
+          <button className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium rounded-xl text-rose-400 hover:bg-rose-500/10 transition-colors">
+            <span className="flex items-center space-x-3"><LogOut size={18} /><span>Log out</span></span>
+          </button>
+        </div>
+      </div>
+
+      {/* CORE WORKSPACE FRAME CONTAINER */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+        <header className="h-20 bg-[#0e1424]/50 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-6 lg:px-10 sticky top-0 z-40">
+          <div className="flex items-center">
+            <button className="text-slate-400 hover:text-white mr-4 lg:hidden" onClick={() => setSidebarOpen(true)}><Menu size={24} /></button>
+            <h1 className="text-xl font-semibold text-white hidden md:block">Production Center</h1>
+          </div>
+          <button onClick={() => { setActiveTab('releases'); setFormStep('basic'); }} className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium text-sm px-4 py-2.5 rounded-full shadow-lg hover:from-blue-600 transition-all">
+            <Upload size={16} /><span>New Release</span>
+          </button>
+        </header>
+
+        <main className="flex-1 p-6 lg:p-10 space-y-8 max-w-7xl w-full mx-auto">
+          
+          {/* TAB ARCHITECTURE VIEW 1: CENTRAL OVERVIEW DASHBOARD */}
+          {activeTab === 'dashboard' && (
+            <>
+              <div className="relative bg-gradient-to-r from-blue-900/40 via-indigo-900/20 to-transparent p-6 rounded-2xl border border-blue-500/20 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-white mb-1">Global Music Distribution Made Simple</h2>
+                  <p className="text-sm text-slate-400 max-w-xl">Get your tracks onto Spotify, Apple Music, TikTok, and Boomplay. Keep 100% of your earnings.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {stats.map((stat, i) => {
+                  const Icon = stat.icon;
+                  return (
+                    <div key={i} className="bg-[#0e1424] border border-slate-800/80 p-6 rounded-2xl flex items-center justify-between">
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase text-slate-400">{stat.name}</p>
+                        <p className="text-2xl font-bold text-white">{stat.value}</p>
+                        <p className="text-xs text-slate-500">{stat.change}</p>
+                      </div>
+                      <div className={`p-3 bg-slate-800/50 rounded-xl ${stat.color}`}><Icon size={24} /></div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* RECENT RELEASES TABLE */}
+              <div className="bg-[#0e1424] border border-slate-800 rounded-2xl overflow-hidden">
+                <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+                  <h3 className="font-bold text-white text-base">Recent Catalog</h3>
+                </div>
+                <div className="overflow-x-auto">
+                  {loadingCatalog ? (
+                    <div className="p-10 text-center text-slate-400 text-sm italic">Polling secure Firestore database for music catalog fields...</div>
+                  ) : recentReleases.length === 0 ? (
+                    <div className="p-10 text-center text-slate-500 text-sm italic">No active releases found in your Firestore tracking collection.</div>
+                  ) : (
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-xs font-semibold text-slate-400 bg-[#0c1120]/50">
+                          <th className="py-4 px-6">Release Title</th>
+                          <th className="py-4 px-6">Type</th>
+                          <th className="py-4 px-6">UPC / Code</th>
+                          <th className="py-4 px-6">Release Date</th>
+                          <th className="py-4 px-6">Streams</th>
+                          <th className="py-4 px-6">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 text-sm">
+                        {recentReleases.map((release) => (
+                          <tr key={release.id} className="hover:bg-[#12192c]/40 transition-colors">
+                            <td className="py-4 px-6 font-medium text-white flex items-center space-x-3">
+                              <div className="h-10 w-10 bg-slate-800 rounded-lg flex items-center justify-center border border-slate-700 text-slate-400"><Music size={16} /></div>
+                              <span>{release.title}</span>
+                            </td>
+                            <td className="py-4 px-6 text-slate-400">{release.type}</td>
+                            <td className="py-4 px-6 font-mono text-xs text-slate-400">{release.upc || 'Pending'}</td>
+                            <td className="py-4 px-6 text-slate-400">{release.releaseDate || release.date}</td>
+                            <td className="py-4 px-6 font-semibold text-slate-200">{Number(release.streams || 0).toLocaleString()}</td>
+                            <td className="py-4 px-6">
+                              <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${release.status === 'Live' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                                {release.status === 'Live' ? <CheckCircle size={12} /> : <Clock size={12} />}
+                                <span>{release.status}</span>
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* TAB ARCHITECTURE VIEW 2: DISTRIBUTE RELEASES PORTAL WITH MULTI-STEP NAVIGATION */}
+          {activeTab === 'releases' && (
+            <div className="space-y-6">
+              
+              {/* COMPONENT MULTI-STEP TIMELINE TRACKER LINK BLOCK HEADER */}
+              <div className="bg-[#0e1424] border border-slate-800 p-2 rounded-2xl flex flex-wrap gap-2 text-xs font-bold">
+                <button onClick={() => setFormStep('basic')} className={`px-4 py-2.5 rounded-xl transition-all ${formStep === 'basic' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-[#161f38]'}`}>1. Metadata Profiles</button>
+                <button onClick={() => setFormStep('assets')} className={`px-4 py-2.5 rounded-xl transition-all ${formStep === 'assets' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-[#161f38]'}`}>2. Audio & Media Drop</button>
+                <button onClick={() => setFormStep('splits')} className={`px-4 py-2.5 rounded-xl transition-all ${formStep === 'splits' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-[#161f38]'}`}>3. Royalty & Wallets</button>
+                <button onClick={() => setFormStep('stores')} className={`px-4 py-2.5 rounded-xl transition-all ${formStep === 'stores' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:bg-[#161f38]'}`}>4. Delivery Outlets</button>
+              </div>
+
+              {/* ACTION ENTRY SUBMISSION FORM INITIALIZATION CONTAINER */}
+              <form onSubmit={handleFormSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                {/* INTERACTIVE COMPONENT CONFIGURATOR GRID CONTENT SECTION */}
+                <div className="lg:col-span-2 bg-[#0e1424] border border-slate-800 p-6 rounded-2xl space-y-6">
+                  
+                  {/* STEP PANEL MODULE 1: BASIC PROFILE AND CONTRIBUTOR DATA STRINGS */}
+                  {formStep === 'basic' && (
+                    <div className="space-y-6 animate-fadeIn">
+                      <div>
+                        <h3 className="text-base font-bold text-white">Release Information Profile</h3>
+                        <p className="text-xs text-slate-400">Map indexing structural attributes describing your studio composition rows.</p>
+                      </div>
+                      <hr className="border-slate-800/60" />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Release Title *</label>
+                          <input type="text" name="title" value={formData.title} onChange={handleInputChange} placeholder="e.g., Midnight Drive" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Version Sub-title</label>
+                          <input type="text" name="version" value={formData.version} onChange={handleInputChange} placeholder="e.g., Radio Edit / Remix" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Distribution Class</label>
+                          <select name="type" value={formData.type} onChange={handleInputChange} className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none">
+                            <option value="Single">Single Track</option>
+                            <option value="EP">EP (Extended Play Bundle)</option>
+                            <option value="Album">Studio Album Container</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Primary Display Artist *</label>
+                          <input type="text" name="primaryArtist" value={formData.primaryArtist} onChange={handleInputChange} placeholder="Main billing name" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Featured Vocals / Artists</label>
+                          <input type="text" name="featuredArtists" value={formData.featuredArtists} onChange={handleInputChange} placeholder="Separated by commas" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Primary Producer Attribution</label>
+                          <input type="text" name="producerName" value={formData.producerName} onChange={handleInputChange} placeholder="Beat engineer tracking identifier" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Core Songwriters (Full Legal Names)</label>
+                          <input type="text" name="songwriters" value={formData.songwriters} onChange={handleInputChange} placeholder="Crucial for licensing audits" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Primary Genre Classification</label>
+                          <select name="genre" value={formData.genre} onChange={handleInputChange} className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none">
+                            <option value="Afrobeats">Afrobeats</option>
+                            <option value="Amapiano">Amapiano</option>
+                            <option value="Gengetone">Gengetone</option>
+                            <option value="Hip-Hop">Hip-Hop / Rap</option>
+                            <option value="R&B">R&B / Soul</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Target Language Metadata</label>
+                          <input type="text" name="language" value={formData.language} onChange={handleInputChange} placeholder="e.g., Swahili / English" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Explicit Advisory Rating</label>
+                          <select name="isExplicit" value={formData.isExplicit} onChange={handleInputChange} className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none">
+                            <option value="No">Clean (No Explicit Content)</option>
+                            <option value="Yes">Explicit Content Present</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Target Airplay Release Date</label>
+                          <input type="date" name="releaseDate" value={formData.releaseDate} onChange={handleInputChange} className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Record Label Display String</label>
+                          <input type="text" name="recordLabel" value={formData.recordLabel} onChange={handleInputChange} placeholder="e.g., Independent / Custom Label" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-2">
+                        <button type="button" onClick={() => setFormStep('assets')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all">
+                          <span>Continue Setup</span><ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP PANEL MODULE 2: MEDIA UPLOAD ARTWORK DROPZONES */}
+                  {formStep === 'assets' && (
+                    <div className="space-y-6 animate-fadeIn">
+                      <div>
+                        <h3 className="text-base font-bold text-white">Media Asset Matrix Dropzone</h3>
+                        <p className="text-xs text-slate-400">Provide studio audio file components and graphical master files.</p>
+                      </div>
+                      <hr className="border-slate-800/60" />
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                        {/* Artwork Frame Upload */}
+                        <div className="border border-dashed border-slate-800 hover:border-slate-700 rounded-2xl p-6 bg-[#0a0f1d]/60 flex flex-col items-center justify-center text-center space-y-2 cursor-pointer transition-colors group">
+                          <div className="p-3 bg-slate-800/40 rounded-xl text-blue-400 group-hover:text-blue-300"><Disc size={28} /></div>
+                          <span className="font-bold text-slate-200 text-xs">Drop Cover Artwork</span>
+                          <span className="text-[10px] text-slate-400 max-w-[180px]">JPG or PNG format • 3000x3000px square proportions perfectly</span>
+                        </div>
+
+                        {/* Audio Frame Upload */}
+                        <div className="border border-dashed border-slate-800 hover:border-slate-700 rounded-2xl p-6 bg-[#0a0f1d]/60 flex flex-col items-center justify-center text-center space-y-2 cursor-pointer transition-colors group">
+                          <div className="p-3 bg-slate-800/40 rounded-xl text-emerald-400 group-hover:text-emerald-300"><Music size={28} /></div>
+                          <span className="font-bold text-slate-200 text-xs">Drop Master Audio File</span>
+                          <span className="text-[10px] text-slate-400 max-w-[180px]">Uncompressed WAV format preferred • 16-bit or 24-bit / 44.1kHz specs</span>
+                        </div>
+                      </div>
+
+                      {/* Technical Audio Metadata Track Fields Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm pt-2">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Track BPM Tempo</label>
+                          <input type="number" name="bpm" value={formData.bpm} onChange={handleInputChange} placeholder="e.g., 112" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none font-mono" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Scale / Musical Key</label>
+                          <input type="text" name="musicalKey" value={formData.musicalKey} onChange={handleInputChange} placeholder="e.g., C Minor" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Composition Mood Tags</label>
+                          <input type="text" name="mood" value={formData.mood} onChange={handleInputChange} placeholder="e.g., Chill, Energetic" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2.5 text-slate-200 focus:border-blue-500 focus:outline-none" />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between pt-2">
+                        <button type="button" onClick={() => setFormStep('basic')} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl transition-all">Back</button>
+                        <button type="button" onClick={() => setFormStep('splits')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all">
+                          <span>Continue Setup</span><ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP PANEL MODULE 3: REVENUE ARCHITECTURE AND SPLITS TRACKER ROWS */}
+                  {formStep === 'splits' && (
+                    <div className="space-y-6 animate-fadeIn">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="text-base font-bold text-white">Royalty Share Allocations</h3>
+                          <p className="text-xs text-slate-400">Establish revenue percentage distributions directly bound to payment endpoints.</p>
+                        </div>
+                        <button type="button" onClick={addSplitRow} className="bg-[#161f38] hover:bg-[#1e2b4f] border border-slate-800 text-blue-400 text-xs font-bold px-3 py-1.5 rounded-xl transition-all">
+                          + Add Split Entity
+                        </button>
+                      </div>
+                      <hr className="border-slate-800/60" />
+
+                      {/* Dynamic Splits Variable Arrays Matrix Builder Render */}
+                      <div className="space-y-3">
+                        {splitsList.map((row) => (
+                          <div key={row.id} className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-[#0a0f1d]/40 p-4 rounded-xl border border-slate-800/50 text-sm">
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Contributor Handle</label>
+                              <input type="text" value={row.name} onChange={(e) => updateSplitRow(row.id, 'name', e.target.value)} placeholder="Username / Entity" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Contributor Role</label>
+                              <input type="text" value={row.role} onChange={(e) => updateSplitRow(row.id, 'role', e.target.value)} placeholder="e.g., Beat Producer" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Email Node Address</label>
+                              <input type="email" value={row.email} onChange={(e) => updateSplitRow(row.id, 'email', e.target.value)} placeholder="payouts@link.com" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Payout Split %</label>
+                              <input type="number" value={row.percentage} onChange={(e) => updateSplitRow(row.id, 'percentage', e.target.value)} placeholder="%" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-lg px-3 py-1.5 text-slate-200 focus:outline-none font-mono font-bold text-blue-400" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Payment Route Parameters Mapping Inputs Grid */}
+                      <div className="bg-[#0a0f1d]/80 border border-slate-800 rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm items-end">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-400 mb-1">Target Wallet Network Channel</label>
+                          <select name="paymentMethod" value={formData.paymentMethod} onChange={handleInputChange} className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2 text-slate-200 focus:outline-none">
+                            <option value="M-Pesa">M-Pesa Mobile Money</option>
+                            <option value="PayPal">PayPal Core Engine</option>
+                          </select>
+                        </div>
+                        {formData.paymentMethod === 'M-Pesa' ? (
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-slate-400 mb-1">M-Pesa Safaricom Mobile Line Number</label>
+                            <input type="text" name="mpesaNumber" value={formData.mpesaNumber} onChange={handleInputChange} placeholder="e.g., 0712345678" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2 text-slate-200 focus:outline-none font-mono" />
+                          </div>
+                        ) : (
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-slate-400 mb-1">PayPal Verified Merchant Account Email</label>
+                            <input type="email" name="paypalEmail" value={formData.paypalEmail} onChange={handleInputChange} placeholder="merchant@payouts.com" className="w-full bg-[#0a0f1d] border border-slate-800 rounded-xl px-4 py-2 text-slate-200 focus:outline-none" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex justify-between pt-2">
+                        <button type="button" onClick={() => setFormStep('assets')} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl transition-all">Back</button>
+                        <button type="button" onClick={() => setFormStep('stores')} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all">
+                          <span>Continue Setup</span><ChevronRight size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* STEP PANEL MODULE 4: OUTLET CHANNELS PLATFORMS CHECKBOX CHECKS BOX MODULES */}
+                  {formStep === 'stores' && (
+                    <div className="space-y-6 animate-fadeIn">
+                      <div>
+                        <h3 className="text-base font-bold text-white">Target Distribution Outlets Selection</h3>
+                        <p className="text-xs text-slate-400">Toggle streaming services data parameters to provision store targets.</p>
+                      </div>
+                      <hr className="border-slate-800/60" />
+
+                      <div className="space-y-2">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">DSP Transmission Outlets</label>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {['Spotify', 'Apple Music', 'Boomplay', 'Audiomack', 'TikTok', 'YouTube Music', 'Deezer', 'Amazon Music', 'Tidal'].map((store) => (
+                            <div key={store} onClick={() => handleCheckboxToggle('platforms', store)} className={`p-4 rounded-xl border border-slate-800/80 bg-[#0a0f1d]/40 flex items-center space-x-3 cursor-pointer select-none transition-all hover:border-slate-700 ${formData.platforms.includes(store) ? 'border-blue-500/60 bg-blue-500/5 text-white' : 'text-slate-400'}`}>
+                              <div className={`h-4 w-4 rounded border flex items-center justify-center text-[10px] ${formData.platforms.includes(store) ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-700 bg-slate-900'}`}>{formData.platforms.includes(store) && '✓'}</div>
+                              <span className="text-xs font-semibold">{store}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-2">
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Social Asset Fingerprint Monetization</label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {['TikTok Monetization', 'Instagram Reels Library', 'YouTube Content ID Fingerprint', 'Facebook Music System'].map((social) => (
+                            <div key={social} onClick={() => handleCheckboxToggle('socialMonetization', social)} className={`p-4 rounded-xl border border-slate-800/80 bg-[#0a0f1d]/40 flex items-center space-x-3 cursor-pointer select-none transition-all hover:border-slate-700 ${formData.socialMonetization.includes(social) ? 'border-emerald-500/60 bg-emerald-500/5 text-white' : 'text-slate-400'}`}>
+                              <div className={`h-4 w-4 rounded border flex items-center justify-center text-[10px] ${formData.socialMonetization.includes(social) ? 'border-emerald-500 bg-emerald-600 text-white' : 'border-slate-700 bg-slate-900'}`}>{formData.socialMonetization.includes(social) && '✓'}</div>
+                              <span className="text-xs font-semibold">{social}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-[#0e1424] border border-blue-500/20 rounded-xl p-4 flex gap-3 text-xs text-slate-300">
+                        <Info size={16} className="text-blue-400 shrink-0 mt-0.5" />
+                        <p>By hitting distribute, you certify that all uploaded compositions are original audios free of sample clearing copyright tracking strikes.</p>
+                      </div>
+
+                      <div className="flex justify-between pt-2">
+                        <button type="button" onClick={() => setFormStep('splits')} className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-4 py-2.5 rounded-xl transition-all">Back</button>
+                        <button type="submit" disabled={submitting} className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all hover:from-blue-600">
+                          <Upload size={14} /><span>{submitting ? 'Transmitting Metadata Fields...' : 'Deploy Global Release'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+
+                {/* VISUAL SIDE PANEL SYNCED SUBMISSION SUMMARY LAYOUT SUMMARY CARD */}
+                <div className="lg:col-span-1 space-y-4">
+                  <div className="bg-[#0e1424] border border-slate-800 p-5 rounded-2xl space-y-4">
+                    <h4 className="text-sm font-bold text-white tracking-wide">Live Metadata Sync Blueprint</h4>
+                    <hr className="border-slate-800" />
+                    
+                    <div className="space-y-3 text-xs">
+                      <div className="flex justify-between"><span className="text-slate-400">Release Title:</span><span className="font-bold text-white truncate max-w-[120px]">{formData.title || '(Incomplete)'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Billing Artist:</span><span className="font-medium text-slate-200">{formData.primaryArtist || '(Pending)'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Class Type:</span><span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-blue-400 font-medium">{formData.type}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Genre Node:</span><span className="text-slate-300">{formData.genre}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Payment Out:</span><span className="text-slate-300 font-mono">{formData.paymentMethod}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Active Form Node:</span><span className="text-blue-400 font-bold capitalize">{formStep} view</span></div>
+                    </div>
+
+                    {formMessage && (
+                      <div className={`p-3 rounded-xl border text-xs text-center font-medium ${formMessage.includes('🎉') ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-400' : 'bg-amber-500/5 border-amber-500/10 text-amber-400'}`}>
+                        {formMessage}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-slate-900/30 rounded-2xl border border-slate-800/60 flex gap-3 text-[11px] text-slate-400">
+                    <HelpCircle size={14} className="text-slate-500 shrink-0 mt-0.5" />
+                    <span>Need immediate licensing codes generation? Head to our documentation center panel parameters layout workspace.</span>
+                  </div>
+                </div>
+
+              </form>
+            </div>
+          )}
+
+        </main>
+      </div>
+    </div>
+  );
+}
