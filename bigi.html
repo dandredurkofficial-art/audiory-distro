@@ -1,23 +1,21 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import mongoose from 'mongoose';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// Request Middlewares
 app.use(cors());
 app.use(express.json());
 
-// Test Route to make sure our API works
+// Test Connection Route
 app.get('/api/test', (req, res) => {
   res.json({ message: "Audiory Distro API is live and running!" });
 });
 
-// Start listening for requests
 app.listen(PORT, () => {
   console.log(`🚀 Server is flying high on port ${PORT}`);
 });
