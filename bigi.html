@@ -1,20 +1,145 @@
-// POST: Register and initialize user profiles in Firebase
+app.post('/api/releases', upload.fields(distributionFields), async (req, res) => {
+  try {
+    // Structural metadata parsing from multipart data payload safely
+    let bodyData = {};
+    if (req.body.jsonData) {
+      try {
+        bodyData = typeof req.body.jsonData === 'string' ? JSON.parse(req.body.jsonData) : req.body.jsonData;
+      } catch (parseError) {
+        console.error('❌ Error parsing bodyData JSON string:', parseError);
+        bodyData = req.body;
+      }
+    } else {
+      bodyData = req.body;
+    }
+    
+    const {
+      title, version, type, primaryArtist, featuredArtists, producerName,
+      songwriters, composers, genre, subgenre, language, isExplicit,
+      releaseDate, originalReleaseDate, recordLabel, copyrightOwner, publishingOwner,
+      bpm, musicalKey, mood, tags, ISRC,
+      splits, paymentMethod, mpesaNumber, paypalEmail,
+      platforms, socialMonetization, tracksData
+    } = bodyData;
+
+    if (!title || !type || !primaryArtist) {
+      return res.status(400).json({ error: 'Core properties missing: Title, Type, and Primary Artist are required.' });
+    }
+
+    // Process uploaded file pointer locations securely
+    let coverArtPath = '';
+    if (req.files && req.files['coverArt'] && req.files['coverArt'][0]) {
+      coverArtPath = `/uploads/${req.files['coverArt'][0].filename}`;
+    }
+
+    let trackFiles = [];
+    if (req.files && req.files['audioTracks']) {
+      trackFiles = req.files['audioTracks'].map(f => `/uploads/${f.filename}`);
+    }
+
+    // Defensive Mapping fallback: Handle stringified or raw arrays cleanly without throwing errors
+    let parsedTracksInfo = [];
+    try {
+      if (Array.isArray(tracksData)) {
+        parsedTracksInfo = tracksData;
+      } else if (typeof tracksData === 'string') {
+        parsedTracksInfo = JSON.parse(tracksData);
+      } else if (bodyData.tracks && Array.isArray(bodyData.tracks)) {
+        parsedTracksInfo = bodyData.tracks;
+      } else if (bodyData.tracks && typeof bodyData.tracks === 'string') {
+        parsedTracksInfo = JSON.parse(bodyData.tracks);
+      }
+    } catch (trackParseError) {
+      console.error('❌ Error parsing tracks structural metadata layout:', trackParseError);
+      parsedTracksInfo = [];
+    }
+
+    // If parsing fails completely or is empty, gracefully create placeholder track entities for the uploaded binary files
+    if (parsedTracksInfo.length === 0 && trackFiles.length > 0) {
+      parsedTracksInfo = trackFiles.map((_, i) => ({ title: `Track ${i + 1}` }));
+    }
+
+    const finalTracksArray = parsedTracksInfo.map((track, index) => ({
+      trackNumber: index + 1,
+      title: track.title || `Track ${index + 1}`,
+      audioFileUrl: trackFiles[index] || '', // Maps sequence orders cleanly
+      duration: track.duration || ''
+    }));
+
+    // Generate random identifiers cleanly
+    const generatedUPC = bodyData.upc || `AUC-${Math.floor(10000000 + Math.random() * 90000000)}`;
+    const generatedISRC = ISRC || `KE-AUD-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const compiledReleasePayload = {
+      title,
+      type,
+      coverArtUrl: coverArtPath,
+      upc: generatedUPC,
+      releaseDate: releaseDate || new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+      streams: bodyData.streams ? Number(bodyData.streams) : 0,
+      status: 'In Review',
+      createdAt: new Date().toISOString(),
+      tracks: finalTracksArray,
+      metadata: {
+        version: version || 'Original Mix',
+        primaryArtist,
+        featuredArtists: featuredArtists || '',
+        producerName: producerName || '',
+        songwriters: songwriters || '',
+        composers: composers || '',
+        genre: genre || 'Urban / Local',
+        subgenre: subgenre || '',
+        language: language || 'Swahili',
+        isExplicit: isExplicit === 'Yes' || isExplicit === true,
+        originalReleaseDate: originalReleaseDate || releaseDate,
+        recordLabel: recordLabel || 'Independent / Audiory',
+        copyrightOwner: copyrightOwner || primaryArtist,
+        publishingOwner: publishingOwner || primaryArtist
+      },
+      technicalSpecs: {
+        bpm: bpm || '',
+        musicalKey: musicalKey || '',
+        mood: mood || '',
+        tags: tags || '',
+        isrc: generatedISRC
+      },
+      royaltyArchitecture: {
+        splits: splits || [],
+        paymentMethod: paymentMethod || 'M-Pesa',
+        mpesaNumber: mpesaNumber || '',
+        paypalEmail: paypalEmail || ''
+      },
+      distributionTargets: {
+        platforms: platforms || [],
+        socialMonetization: socialMonetization || []
+      }
+    };
+
+    const docRef = await db.collection('releases').add(compiledReleasePayload);
+    res.status(201).json({ id: docRef.id, ...compiledReleasePayload });
+  } catch (error) {
+    console.error('❌ Error handling multi-part pipeline submission:', error);
+    res.status(500).json({ error: 'Pipeline Transmission failure. Check system network parameters.' });
+  }
+});
+
+// POST: Add explicit User Sign-Up Authentication Identity and Profile Mapping Endpoint
 app.post('/api/auth/signup', async (req, res) => {
   try {
     const { email, password, displayName, role } = req.body;
 
     if (!email || !password || !displayName) {
-      return res.status(400).json({ error: 'Email, password, and display name are required.' });
+      return res.status(400).json({ error: 'Core authentication properties missing: Email, Password, and Name are required.' });
     }
 
-    // 1. Register the core identity profile in Firebase Authentication
+    // 1. Register base credentials directly inside Firebase Authentication Core Subsystem
     const userRecord = await admin.auth().createUser({
       email,
       password,
       displayName
     });
 
-    // 2. Initialize their business dashboard metrics in Firestore linked by UID
+    // 2. Build initial empty metric profile dashboard tracking data map structure
     const initialUserProfile = {
       uid: userRecord.uid,
       displayName,
@@ -26,87 +151,27 @@ app.post('/api/auth/signup', async (req, res) => {
       createdAt: new Date().toISOString()
     };
 
+    // 3. Initialize matching profile record metadata block within cloud firestore database collections
     await db.collection('users').doc(userRecord.uid).set(initialUserProfile);
 
-    // Return profile access token details to browser client
     res.status(201).json({ 
-      message: 'User registered successfully', 
+      message: 'User authentication profile linked successfully.', 
       uid: userRecord.uid,
       user: initialUserProfile 
     });
 
   } catch (error) {
     console.error('❌ Firebase auth sign-up failure:', error);
-    res.status(500).json({ error: error.message || 'Registration engine failed.' });
+    res.status(500).json({ error: error.message || 'Authentication configuration mapping failure.' });
   }
 });
 
+// Fallback logic delivering index framework routing
+app.get('*', (req, res) => {
+  res.sendFile(pathModule.join(__dirname, 'public', 'index.html'));
+});
 
-
-app.post('/api/releases', upload.fields(distributionFields), async (req, res) => {
-  try {
-    let bodyData = {};
-    
-    // Guard rails to catch how the frontend stringifies data fields
-    if (req.body.jsonData) {
-      bodyData = typeof req.body.jsonData === 'string' ? JSON.parse(req.body.jsonData) : req.body.jsonData;
-    } else {
-      bodyData = req.body;
-    }
-    
-    // Safely extract tracks data even if the frontend sent it as a stringified sub-field
-    let rawTracks = bodyData.tracksData || bodyData.tracks || [];
-    if (typeof rawTracks === 'string') {
-      rawTracks = JSON.parse(rawTracks);
-    }
-
-    const {
-      title, type, primaryArtist, releaseDate, ISRC
-      // ... extract everything else you need here
-    } = bodyData;
-
-    if (!title || !type || !primaryArtist) {
-      return res.status(400).json({ error: 'Core properties missing: Title, Type, and Primary Artist are required.' });
-    }
-
-    let coverArtPath = '';
-    if (req.files && req.files['coverArt'] && req.files['coverArt'][0]) {
-      coverArtPath = `/uploads/${req.files['coverArt'][0].filename}`;
-    }
-
-    let trackFiles = [];
-    if (req.files && req.files['audioTracks']) {
-      trackFiles = req.files['audioTracks'].map(f => `/uploads/${f.filename}`);
-    }
-
-    // Map physical binary files directly back to incoming tracks tracking array
-    const finalTracksArray = rawTracks.map((track, index) => ({
-      trackNumber: index + 1,
-      title: track.title || `Track ${index + 1}`,
-      audioFileUrl: trackFiles[index] || '', 
-      duration: track.duration || ''
-    }));
-
-    // Build package
-    const compiledReleasePayload = {
-      title,
-      type,
-      coverArtUrl: coverArtPath,
-      upc: bodyData.upc || `AUC-${Math.floor(10000000 + Math.random() * 90000000)}`,
-      releaseDate: releaseDate || new Date().toISOString(),
-      status: 'In Review',
-      createdAt: new Date().toISOString(),
-      tracks: finalTracksArray,
-      metadata: { primaryArtist }
-    };
-
-    const docRef = await db.collection('releases').add(compiledReleasePayload);
-    
-    // Respond back to frontend instantly so the pipeline closes successfully!
-    res.status(201).json({ id: docRef.id, ...compiledReleasePayload });
-
-  } catch (error) {
-    console.error('❌ Pipeline Transmission failure on backend:', error);
-    res.status(500).json({ error: 'Pipeline Transmission failure. Check system network parameters.' });
-  }
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log('🚀 Audiory Core Server humming nicely on port ' + PORT);
 });
