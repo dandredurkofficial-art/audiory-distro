@@ -1,7 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import mongoose from 'mongoose';
+import admin from 'firebase-admin';
+import { readFileSync } from 'fs';
 
 dotenv.config();
 
@@ -12,14 +13,27 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// MongoDB Database Connection Hook
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('📁 Database connected successfully to MongoDB Atlas!'))
-  .catch((err) => console.error('❌ Database connection error details:', err));
+// Initialize Firebase Admin Using Your Local Private Key File
+try {
+  const serviceAccount = JSON.parse(
+    readFileSync(new URL('./firebase-key.json', import.meta.url))
+  );
 
-// Test Connection Route
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+
+  console.log('📁 Database connected successfully to Firebase Firestore!');
+} catch (error) {
+  console.error('❌ Firebase initialization error details:', error);
+}
+
+// Get Database Instance for your routes later
+const db = admin.firestore();
+
+// Quick Test Route
 app.get('/api/test', (req, res) => {
-  res.json({ message: "Audiory Distro API is live and running!" });
+  res.json({ message: "Audiory Distro Firebase API is live and running!" });
 });
 
 app.listen(PORT, () => {
