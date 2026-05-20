@@ -1,106 +1,74 @@
-import express from 'express';
-import cors from 'cors';
-import path from 'url';
-import pathModule from 'path';
-import fs from 'fs';
-import multer from 'multer';
-import admin from 'firebase-admin';
-import { fileURLToPath } from 'url';
-import 'dotenv/config'; // Ensures process.env.PORT is read reliably from a .env file
-
-// Reconstruct __dirname for ES Modules compatibility
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = pathModule.dirname(__filename);
-
-// 1. Initialize Firebase Admin using modern ES Module 'with' syntax
-import serviceAccount from './firebase-key.json' with { type: 'json' };
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-}
-
-const db = admin.firestore();
-const app = express();
-
-// Middleware Engine Configuration
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // Safe handling for multipart text components
-app.use(express.static(pathModule.join(__dirname, 'public')));
-
-// 2. Configure Local Multi-File Storage Subsystems
-const uploadDir = pathModule.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    // Retain clean extensions and drop dangerous characters
-    const safeName = file.originalname.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `${uniqueSuffix}-${safeName}`);
-  }
-});
-
-const upload = multer({ 
-  storage: storage,
-  limits: { fileSize: 100 * 1024 * 1024 } // 100MB Limit safeguarding large audio tracks
-});
-
-// Define multi-field receiver configuration maps
-const distributionFields = [
-  { name: 'coverArt', maxCount: 1 },
-  { name: 'audioTracks', maxCount: 20 }
-];
-
-// 3. API ENDPOINTS
-
-// GET: Fetch Active Dynamic Production Catalog
-app.get('/api/releases', async (req, res) => {
+// POST: Register and initialize user profiles in Firebase
+app.post('/api/auth/signup', async (req, res) => {
   try {
-    const snapshot = await db.collection('releases').orderBy('createdAt', 'desc').get();
-    const releases = [];
-    snapshot.forEach(doc => {
-      releases.push({ id: doc.id, ...doc.data() });
+    const { email, password, displayName, role } = req.body;
+
+    if (!email || !password || !displayName) {
+      return res.status(400).json({ error: 'Email, password, and display name are required.' });
+    }
+
+    // 1. Register the core identity profile in Firebase Authentication
+    const userRecord = await admin.auth().createUser({
+      email,
+      password,
+      displayName
     });
-    res.json(releases);
+
+    // 2. Initialize their business dashboard metrics in Firestore linked by UID
+    const initialUserProfile = {
+      uid: userRecord.uid,
+      displayName,
+      email,
+      role: role || 'Producer', 
+      totalBalance: 0.00,
+      totalStreams: 0,
+      activeReleases: 0,
+      createdAt: new Date().toISOString()
+    };
+
+    await db.collection('users').doc(userRecord.uid).set(initialUserProfile);
+
+    // Return profile access token details to browser client
+    res.status(201).json({ 
+      message: 'User registered successfully', 
+      uid: userRecord.uid,
+      user: initialUserProfile 
+    });
+
   } catch (error) {
-    console.error('Error reading catalog snapshot:', error);
-    res.status(500).json({ error: 'Failed to extract active release states.' });
+    console.error('❌ Firebase auth sign-up failure:', error);
+    res.status(500).json({ error: error.message || 'Registration engine failed.' });
   }
 });
 
-// POST: Advanced Multi-File Multi-Step Form Processor
+
+
 app.post('/api/releases', upload.fields(distributionFields), async (req, res) => {
   try {
-    // Structural metadata parsing from multipart data payload safely
     let bodyData = {};
+    
+    // Guard rails to catch how the frontend stringifies data fields
     if (req.body.jsonData) {
-      bodyData = JSON.parse(req.body.jsonData);
+      bodyData = typeof req.body.jsonData === 'string' ? JSON.parse(req.body.jsonData) : req.body.jsonData;
     } else {
       bodyData = req.body;
     }
     
+    // Safely extract tracks data even if the frontend sent it as a stringified sub-field
+    let rawTracks = bodyData.tracksData || bodyData.tracks || [];
+    if (typeof rawTracks === 'string') {
+      rawTracks = JSON.parse(rawTracks);
+    }
+
     const {
-      title, version, type, primaryArtist, featuredArtists, producerName,
-      songwriters, composers, genre, subgenre, language, isExplicit,
-      releaseDate, originalReleaseDate, recordLabel, copyrightOwner, publishingOwner,
-      bpm, musicalKey, mood, tags, ISRC,
-      splits, paymentMethod, mpesaNumber, paypalEmail,
-      platforms, socialMonetization, tracksData
+      title, type, primaryArtist, releaseDate, ISRC
+      // ... extract everything else you need here
     } = bodyData;
 
     if (!title || !type || !primaryArtist) {
       return res.status(400).json({ error: 'Core properties missing: Title, Type, and Primary Artist are required.' });
     }
 
-    // Process uploaded file pointer locations securely
     let coverArtPath = '';
     if (req.files && req.files['coverArt'] && req.files['coverArt'][0]) {
       coverArtPath = `/uploads/${req.files['coverArt'][0].filename}`;
@@ -111,81 +79,34 @@ app.post('/api/releases', upload.fields(distributionFields), async (req, res) =>
       trackFiles = req.files['audioTracks'].map(f => `/uploads/${f.filename}`);
     }
 
-    // Defensive Mapping fallback: Ensure tracks match array indices cleanly
-    const parsedTracksInfo = Array.isArray(tracksData) 
-      ? tracksData 
-      : (typeof tracksData === 'string' ? JSON.parse(tracksData) : []);
-
-    const finalTracksArray = parsedTracksInfo.map((track, index) => ({
+    // Map physical binary files directly back to incoming tracks tracking array
+    const finalTracksArray = rawTracks.map((track, index) => ({
       trackNumber: index + 1,
       title: track.title || `Track ${index + 1}`,
-      audioFileUrl: trackFiles[index] || '', // Maps sequence orders cleanly
+      audioFileUrl: trackFiles[index] || '', 
       duration: track.duration || ''
     }));
 
-    // Generate random identifiers cleanly
-    const generatedUPC = bodyData.upc || `AUC-${Math.floor(10000000 + Math.random() * 90000000)}`;
-    const generatedISRC = ISRC || `KE-AUD-${Math.floor(100000 + Math.random() * 900000)}`;
-
+    // Build package
     const compiledReleasePayload = {
       title,
       type,
       coverArtUrl: coverArtPath,
-      upc: generatedUPC,
-      releaseDate: releaseDate || new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
-      streams: bodyData.streams ? Number(bodyData.streams) : 0,
+      upc: bodyData.upc || `AUC-${Math.floor(10000000 + Math.random() * 90000000)}`,
+      releaseDate: releaseDate || new Date().toISOString(),
       status: 'In Review',
       createdAt: new Date().toISOString(),
       tracks: finalTracksArray,
-      metadata: {
-        version: version || 'Original Mix',
-        primaryArtist,
-        featuredArtists: featuredArtists || '',
-        producerName: producerName || '',
-        songwriters: songwriters || '',
-        composers: composers || '',
-        genre: genre || 'Urban / Local',
-        subgenre: subgenre || '',
-        language: language || 'Swahili',
-        isExplicit: isExplicit === 'Yes' || isExplicit === true,
-        originalReleaseDate: originalReleaseDate || releaseDate,
-        recordLabel: recordLabel || 'Independent / Audiory',
-        copyrightOwner: copyrightOwner || primaryArtist,
-        publishingOwner: publishingOwner || primaryArtist
-      },
-      technicalSpecs: {
-        bpm: bpm || '',
-        musicalKey: musicalKey || '',
-        mood: mood || '',
-        tags: tags || '',
-        isrc: generatedISRC
-      },
-      royaltyArchitecture: {
-        splits: splits || [],
-        paymentMethod: paymentMethod || 'M-Pesa',
-        mpesaNumber: mpesaNumber || '',
-        paypalEmail: paypalEmail || ''
-      },
-      distributionTargets: {
-        platforms: platforms || [],
-        socialMonetization: socialMonetization || []
-      }
+      metadata: { primaryArtist }
     };
 
     const docRef = await db.collection('releases').add(compiledReleasePayload);
+    
+    // Respond back to frontend instantly so the pipeline closes successfully!
     res.status(201).json({ id: docRef.id, ...compiledReleasePayload });
+
   } catch (error) {
-    console.error('❌ Error handling multi-part pipeline submission:', error);
-    res.status(500).json({ error: 'Failed to deploy multi-file distribution package.' });
+    console.error('❌ Pipeline Transmission failure on backend:', error);
+    res.status(500).json({ error: 'Pipeline Transmission failure. Check system network parameters.' });
   }
-});
-
-// Fallback logic delivering index framework routing
-app.get('*', (req, res) => {
-  res.sendFile(pathModule.join(__dirname, 'public', 'index.html'));
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Audiory Core Server humming nicely on port ${PORT}`);
 });
